@@ -99,6 +99,7 @@
 			isa = PBXNativeTarget;
 			buildConfigurationList = 2F360BD717692C4700D9A404 /* Build configuration list for PBXNativeTarget "AVCamManual" */;
 			buildPhases = (
+				0240897A1A95528500AE79C9 /* Run Script: Increment build */,
 				2F360B9E17692C4700D9A404 /* Sources */,
 				2F360BA017692C4700D9A404 /* Resources */,
 				02F2B47A1A954896003D0455 /* ShellScript */,
@@ -165,6 +166,20 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXShellScriptBuildPhase section */
+		0240897A1A95528500AE79C9 /* Run Script: Increment build */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+			);
+			name = "Run Script: Increment build";
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "if [ \"${CONFIGURATION}\" = \"Release\" ]; then\nbuildNumber=$(/usr/libexec/PlistBuddy -c \"Print CFBundleVersion\" \"$INFOPLIST_FILE\")\nbuildNumber=$(($buildNumber + 1))\n/usr/libexec/PlistBuddy -c \"Set :CFBundleVersion $buildNumber\" \"$INFOPLIST_FILE\"\nfi";
+		};
 		02F2B47A1A954896003D0455 /* ShellScript */ = {
 			isa = PBXShellScriptBuildPhase;
 			buildActionMask = 2147483647;
@@ -325,7 +340,7 @@
 				IPHONEOS_DEPLOYMENT_TARGET = 8.0;
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
 				PRODUCT_NAME = AVCamManual;
-				PROVISIONING_PROFILE = "";
+				PROVISIONING_PROFILE = "72de2d5e-a519-4411-9d95-304df74f8363";
 				WRAPPER_EXTENSION = app;
 			};
 			name = Release;
