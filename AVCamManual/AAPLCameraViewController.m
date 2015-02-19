@@ -301,7 +301,10 @@ static float EXPOSURE_MINIMUM_DURATION = 1.0/1000; // Limit exposure duration to
 {
 	[[self cameraButton] setEnabled:NO];
 	[[self recordButton] setEnabled:NO];
-	[[self stillButton] setEnabled:NO];
+    [[self stillButton] setEnabled:NO];
+    
+    self.torchSlider.value = 0;
+    [self changeTorch:nil];
 	
 	dispatch_async([self sessionQueue], ^{
 		AVCaptureDevice *currentVideoDevice = [self videoDevice];
@@ -350,12 +353,6 @@ static float EXPOSURE_MINIMUM_DURATION = 1.0/1000; // Limit exposure duration to
 			[[self stillButton] setEnabled:YES];
 			
 			[self configureManualHUD];
-            
-            if (preferredPosition == AVCaptureDevicePositionFront) {
-                [self.videoDevice setTorchMode:AVCaptureTorchModeOff];
-            } else {
-                [self changeTorch:nil];
-            }
 		});
 	});
 }
@@ -375,7 +372,7 @@ static float EXPOSURE_MINIMUM_DURATION = 1.0/1000; // Limit exposure duration to
 //		{
 //			[AAPLCameraViewController setFlashMode:AVCaptureFlashModeAuto forDevice:[self videoDevice]];
 //		}
-		
+        
 		// Capture a still image
 		[[self stillImageOutput] captureStillImageAsynchronouslyFromConnection:[[self stillImageOutput] connectionWithMediaType:AVMediaTypeVideo] completionHandler:^(CMSampleBufferRef imageSampleBuffer, NSError *error) {
 			
@@ -384,58 +381,71 @@ static float EXPOSURE_MINIMUM_DURATION = 1.0/1000; // Limit exposure duration to
 //				NSData *imageData = [AVCaptureStillImageOutput jpegStillImageNSDataRepresentation:imageDataSampleBuffer];
 //				UIImage *image = [[UIImage alloc] initWithData:imageData];
                 
-                //get all the metadata in the image
-                CFDictionaryRef metadata = CMCopyDictionaryOfAttachments(kCFAllocatorDefault, imageSampleBuffer, kCMAttachmentMode_ShouldPropagate);
-                // get image reference
-                CVImageBufferRef imageBuffer = CMSampleBufferGetImageBuffer(imageSampleBuffer);
-                // >>>>>>>>>> lock buffer address
-                CVPixelBufferLockBaseAddress(imageBuffer, 0);
-                
-                //Get information about the image
-                uint8_t *baseAddress = (uint8_t *)CVPixelBufferGetBaseAddress(imageBuffer);
-                size_t bytesPerRow = CVPixelBufferGetBytesPerRow(imageBuffer);
-                size_t width = CVPixelBufferGetWidth(imageBuffer);
-                size_t height = CVPixelBufferGetHeight(imageBuffer);
-                
-                // create suitable color space
-                CGColorSpaceRef colorSpace = CGColorSpaceCreateDeviceRGB();
-                
-                //Create suitable context (suitable for camera output setting kCVPixelFormatType_32BGRA)
-                CGContextRef newContext = CGBitmapContextCreate(baseAddress, width, height, 8, bytesPerRow, colorSpace, kCGBitmapByteOrder32Little | kCGImageAlphaPremultipliedFirst);
-                
-                // <<<<<<<<<< unlock buffer address
-                CVPixelBufferUnlockBaseAddress(imageBuffer, 0);
-                
-                // release color space
-                CGColorSpaceRelease(colorSpace);
-                
-                //Create a CGImageRef from the CVImageBufferRef
-                CGImageRef newImage = CGBitmapContextCreateImage(newContext);
-                
-                // release context
-                CGContextRelease(newContext);
-                
-                // create destination and write image with metadata
-                NSString *filePath = [NSTemporaryDirectory() stringByAppendingPathComponent:[[NSUUID UUID].UUIDString stringByAppendingString:@".tif"]];
-                NSURL* saveUrl = [NSURL fileURLWithPath:filePath];
-                CGImageDestinationRef destination = CGImageDestinationCreateWithURL((__bridge CFURLRef)saveUrl,
-                                                                                    (CFStringRef)@"public.tiff", 1, NULL);
-                CGImageDestinationAddImage(destination, newImage, metadata);
-                CGImageDestinationFinalize(destination);
-                CFRelease(destination);
-                
-                CGImageRelease(newImage);
-                
-                // use writeImageDataToSavedPhotosAlbum to preserve TIFF format
-                NSData *data = [NSData dataWithContentsOfURL:saveUrl];
-                [[[ALAssetsLibrary alloc] init] writeImageDataToSavedPhotosAlbum:data
-                                                 metadata:nil
-                                          completionBlock:^(NSURL *assetURL, NSError *error) {
-                                              NSLog(@"saved? %@", error);
-                                          }];
-			}
+                [self convertAndSaveTiff:imageSampleBuffer];
+            } else {
+                NSLog(@"Capture error: %@", error);
+            }
 		}];
 	});
+}
+
+- (void)convertAndSaveTiff:(CMSampleBufferRef) imageSampleBuffer {
+    
+    //get all the metadata in the image
+    CFDictionaryRef metadata = CMCopyDictionaryOfAttachments(kCFAllocatorDefault, imageSampleBuffer, kCMAttachmentMode_ShouldPropagate);
+    // get image reference
+    CVImageBufferRef imageBuffer = CMSampleBufferGetImageBuffer(imageSampleBuffer);
+    
+    // >>>>>>>>>> lock buffer address
+    CVPixelBufferLockBaseAddress(imageBuffer, 0);
+    
+    //Get information about the image
+    uint8_t *baseAddress = (uint8_t *)CVPixelBufferGetBaseAddress(imageBuffer);
+    size_t bytesPerRow = CVPixelBufferGetBytesPerRow(imageBuffer);
+    size_t width = CVPixelBufferGetWidth(imageBuffer);
+    size_t height = CVPixelBufferGetHeight(imageBuffer);
+    
+    // create suitable color space
+    CGColorSpaceRef colorSpace = CGColorSpaceCreateDeviceRGB();
+    
+    //Create suitable context (suitable for camera output setting kCVPixelFormatType_32BGRA)
+    CGContextRef newContext = CGBitmapContextCreate(baseAddress, width, height, 8, bytesPerRow, colorSpace, kCGBitmapByteOrder32Little | kCGImageAlphaPremultipliedFirst);
+    
+    // <<<<<<<<<< unlock buffer address
+    CVPixelBufferUnlockBaseAddress(imageBuffer, 0);
+    
+    // release color space
+    CGColorSpaceRelease(colorSpace);
+    
+    //Create a CGImageRef from the CVImageBufferRef
+    CGImageRef newImage = CGBitmapContextCreateImage(newContext);
+    
+    // release context
+    CGContextRelease(newContext);
+    
+    // create destination and write image with metadata
+    NSString *filePath = [NSTemporaryDirectory() stringByAppendingPathComponent:[[NSUUID UUID].UUIDString stringByAppendingString:@".tif"]];
+    NSURL* saveUrl = [NSURL fileURLWithPath:filePath];
+    CGImageDestinationRef destination = CGImageDestinationCreateWithURL((__bridge CFURLRef)saveUrl,
+                                                                        (CFStringRef)@"public.tiff", 1, NULL);
+    CGImageDestinationAddImage(destination, newImage, metadata);
+    CGImageDestinationFinalize(destination);
+    CFRelease(destination);
+    
+    CGImageRelease(newImage);
+    
+    NSLog(@"Captured %@", filePath);
+    
+//    dispatch_async(dispatch_get_global_queue( DISPATCH_QUEUE_PRIORITY_BACKGROUND, 0), ^{
+    
+        // use writeImageDataToSavedPhotosAlbum to preserve TIFF format
+        NSData *data = [NSData dataWithContentsOfURL:saveUrl];
+        [[ALAssetsLibrary new] writeImageDataToSavedPhotosAlbum:data
+                                                       metadata:nil
+                                                completionBlock:^(NSURL *assetURL, NSError *error) {
+                                                             NSLog(@"saved %@? %@", filePath, error);
+                                                         }];
+//    });
 }
 
 - (IBAction)focusAndExposeTap:(UIGestureRecognizer *)gestureRecognizer
@@ -693,10 +703,22 @@ static float EXPOSURE_MINIMUM_DURATION = 1.0/1000; // Limit exposure duration to
 - (void)runStillImageCaptureAnimation
 {
 	dispatch_async(dispatch_get_main_queue(), ^{
-		[[[self previewView] layer] setOpacity:0.0];
-		[UIView animateWithDuration:.25 animations:^{
-			[[[self previewView] layer] setOpacity:1.0];
-		}];
+//		[[[self previewView] layer] setOpacity:0.0];
+//		[UIView animateWithDuration:.25 animations:^{
+//			[[[self previewView] layer] setOpacity:1.0];
+//		}];
+        CATransition *shutterAnimation = [CATransition animation];
+        [shutterAnimation setDelegate:self];
+        [shutterAnimation setDuration:0.6];
+        
+        shutterAnimation.timingFunction = UIViewAnimationCurveEaseInOut;
+        [shutterAnimation setType:@"cameraIris"];
+        [shutterAnimation setValue:@"cameraIris" forKey:@"cameraIris"];
+        CALayer *cameraShutter = [[CALayer alloc]init];
+        [cameraShutter setBounds:self.previewView.bounds];
+        [self.previewView.layer addSublayer:cameraShutter];
+        [self.previewView.layer addAnimation:shutterAnimation forKey:@"cameraIris"];
+
 	});
 }
 
