@@ -133,7 +133,7 @@ static float EXPOSURE_MINIMUM_DURATION = 1.0/1000; // Limit exposure duration to
 	// Why not do all of this on the main queue?
 	// -[AVCaptureSession startRunning] is a blocking call which can take a long time. We dispatch session setup to the sessionQueue so that the main queue isn't blocked (which keeps the UI responsive).
 	
-	dispatch_queue_t sessionQueue = dispatch_queue_create("session queue", DISPATCH_QUEUE_SERIAL);
+	dispatch_queue_t sessionQueue = dispatch_queue_create("com.sri.vbc.session-queue", DISPATCH_QUEUE_SERIAL);
 	[self setSessionQueue:sessionQueue];
 	
 	dispatch_async(sessionQueue, ^{
@@ -195,7 +195,9 @@ static float EXPOSURE_MINIMUM_DURATION = 1.0/1000; // Limit exposure duration to
 		if ([session canAddOutput:stillImageOutput])
 		{
             NSDictionary *settings = [[NSDictionary alloc] initWithObjectsAndKeys: [NSNumber numberWithUnsignedInt:kCVPixelFormatType_32BGRA], kCVPixelBufferPixelFormatTypeKey, nil];
+//            NSDictionary *settings = @{AVVideoQualityKey: @1};
 			[stillImageOutput setOutputSettings:settings];
+            
 			[session addOutput:stillImageOutput];
             if ([session canSetSessionPreset:AVCaptureSessionPresetPhoto]) {
                 [session setSessionPreset:AVCaptureSessionPresetPhoto];
@@ -263,7 +265,7 @@ static float EXPOSURE_MINIMUM_DURATION = 1.0/1000; // Limit exposure duration to
 	[self positionManualHUD];
 }
 
-#pragma mark Actions
+#pragma mark - Actions
 
 - (IBAction)toggleMovieRecording:(id)sender
 {
@@ -386,10 +388,54 @@ static float EXPOSURE_MINIMUM_DURATION = 1.0/1000; // Limit exposure duration to
                 NSLog(@"Capture error: %@", error);
             }
 		}];
+
+        // Capture 5 still images
+//        __block int photoCount = 5;
+//        for (int n = photoCount; n > 0; n--) {
+//            [[self stillImageOutput] captureStillImageAsynchronouslyFromConnection:[[self stillImageOutput] connectionWithMediaType:AVMediaTypeVideo] completionHandler:^(CMSampleBufferRef imageSampleBuffer, NSError *error) {
+//                
+//                @synchronized(self) {
+//                    photoCount--;
+//                }
+//                
+//                if (imageSampleBuffer) {
+//                    [self convertAndSaveTiff:imageSampleBuffer];
+//                } else {
+//                    NSLog(@"Capture error: %@", error);
+//                }
+//            }];
+//        }
+//        while (photoCount > 0); // Spinlock until captureStillImageAsynchronouslyFromConnection captured all photos into memory
+        
+//        // bracketed capture
+//        NSArray *settings = @[
+//                              [AVCaptureManualExposureBracketedStillImageSettings manualExposureSettingsWithExposureDuration:CMTimeMake(1, 100) ISO:100.0],
+//                              [AVCaptureManualExposureBracketedStillImageSettings manualExposureSettingsWithExposureDuration:CMTimeMake(1, 200) ISO:400.0],
+////                              [AVCaptureManualExposureBracketedStillImageSettings manualExposureSettingsWithExposureDuration:CMTimeMake(1, 300) ISO:800.0],
+////                              [AVCaptureManualExposureBracketedStillImageSettings manualExposureSettingsWithExposureDuration:CMTimeMake(1, 200) ISO:800.0],
+//                              ];
+//        [self.stillImageOutput
+//         captureStillImageBracketAsynchronouslyFromConnection:[self.stillImageOutput connectionWithMediaType:AVMediaTypeVideo]
+//         withSettingsArray:settings
+//         completionHandler:^(CMSampleBufferRef imageSampleBuffer, AVCaptureBracketedStillImageSettings *stillImageSettings, NSError *error) {
+//             if (imageSampleBuffer) {
+//                 [self convertAndSaveTiff:imageSampleBuffer];
+//             } else {
+//                 NSLog(@"Capture error: %@", error);
+//             }
+//         }];
+
 	});
 }
 
 - (void)convertAndSaveTiff:(CMSampleBufferRef) imageSampleBuffer {
+    
+//    NSData *imageData = [AVCaptureStillImageOutput jpegStillImageNSDataRepresentation:imageSampleBuffer];
+//    UIImage *image = [[UIImage alloc] initWithData:imageData];
+//    [[[ALAssetsLibrary alloc] init] writeImageToSavedPhotosAlbum:[image CGImage]
+//                                                     orientation:(ALAssetOrientation)image.imageOrientation completionBlock:^(NSURL *assetURL, NSError *error) {
+//                                                         NSLog(@"saved %@? %@", assetURL, error);
+//                                                     }];
     
     //get all the metadata in the image
     CFDictionaryRef metadata = CMCopyDictionaryOfAttachments(kCFAllocatorDefault, imageSampleBuffer, kCMAttachmentMode_ShouldPropagate);
@@ -447,6 +493,8 @@ static float EXPOSURE_MINIMUM_DURATION = 1.0/1000; // Limit exposure duration to
                                                          }];
 //    });
 }
+
+#pragma mark - Config Actions
 
 - (IBAction)focusAndExposeTap:(UIGestureRecognizer *)gestureRecognizer
 {
@@ -686,6 +734,8 @@ static float EXPOSURE_MINIMUM_DURATION = 1.0/1000; // Limit exposure duration to
     }
 }
 
+#pragma mark - UI
+
 - (IBAction)sliderTouchBegan:(id)sender
 {
 	UISlider *slider = (UISlider*)sender;
@@ -697,8 +747,6 @@ static float EXPOSURE_MINIMUM_DURATION = 1.0/1000; // Limit exposure duration to
 	UISlider *slider = (UISlider*)sender;
 	[self setSlider:slider highlightColor:CONTROL_NORMAL_COLOR];
 }
-
-#pragma mark UI
 
 - (void)runStillImageCaptureAnimation
 {
