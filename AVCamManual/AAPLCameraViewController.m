@@ -389,8 +389,9 @@ static float EXPOSURE_MINIMUM_DURATION = 1.0/1000; // Limit exposure duration to
             }
 		}];
 
-        // Capture 5 still images
+////         Capture 5 still images
 //        __block int photoCount = 5;
+//        __block CFMutableArrayRef imageSamples = CFArrayCreateMutable(kCFAllocatorDefault, photoCount, &kCFTypeArrayCallBacks);
 //        for (int n = photoCount; n > 0; n--) {
 //            [[self stillImageOutput] captureStillImageAsynchronouslyFromConnection:[[self stillImageOutput] connectionWithMediaType:AVMediaTypeVideo] completionHandler:^(CMSampleBufferRef imageSampleBuffer, NSError *error) {
 //                
@@ -399,20 +400,57 @@ static float EXPOSURE_MINIMUM_DURATION = 1.0/1000; // Limit exposure duration to
 //                }
 //                
 //                if (imageSampleBuffer) {
-//                    [self convertAndSaveTiff:imageSampleBuffer];
+//                    CFArrayAppendValue(imageSamples, [self CMSampleBufferCreateCopyWithDeep:imageSampleBuffer]);
+////                    [self convertAndSaveTiff:imageSampleBuffer];
+//                    NSLog(@"cache image buffer");
 //                } else {
 //                    NSLog(@"Capture error: %@", error);
 //                }
 //            }];
 //        }
 //        while (photoCount > 0); // Spinlock until captureStillImageAsynchronouslyFromConnection captured all photos into memory
+//        NSMutableArray *fileUrls = [NSMutableArray arrayWithCapacity:CFArrayGetCount(imageSamples)];
+//        for (int i = 0; i < CFArrayGetCount(imageSamples); i++) {
+//            CMSampleBufferRef imageBuffer = (CMSampleBufferRef)CFArrayGetValueAtIndex(imageSamples, i);
+//            NSURL *fileUrl = [self convertAndSaveTiff:imageBuffer];
+//            if (fileUrl) [fileUrls addObject:fileUrl];
+//            CFRelease(imageBuffer);
+//        }
+//        CFRelease(imageSamples);
+//        [self saveImageFiles:fileUrls];
+        
+//        // capture 3 images sequentially
+//        [[self stillImageOutput] captureStillImageAsynchronouslyFromConnection:[[self stillImageOutput] connectionWithMediaType:AVMediaTypeVideo] completionHandler:^(CMSampleBufferRef imageSampleBuffer, NSError *error) {
+//            if (imageSampleBuffer) {
+//                [self convertAndSaveTiff:imageSampleBuffer];
+//            } else {
+//                NSLog(@"Capture error: %@", error);
+//            }
+//            CFRelease(imageSampleBuffer);
+//            [[self stillImageOutput] captureStillImageAsynchronouslyFromConnection:[[self stillImageOutput] connectionWithMediaType:AVMediaTypeVideo] completionHandler:^(CMSampleBufferRef imageSampleBuffer, NSError *error) {
+//                if (imageSampleBuffer) {
+//                    [self convertAndSaveTiff:imageSampleBuffer];
+//                } else {
+//                    NSLog(@"Capture error: %@", error);
+//                }
+//                CFRelease(imageSampleBuffer);
+//                [[self stillImageOutput] captureStillImageAsynchronouslyFromConnection:[[self stillImageOutput] connectionWithMediaType:AVMediaTypeVideo] completionHandler:^(CMSampleBufferRef imageSampleBuffer, NSError *error) {
+//                    if (imageSampleBuffer) {
+//                        [self convertAndSaveTiff:imageSampleBuffer];
+//                    } else {
+//                        NSLog(@"Capture error: %@", error);
+//                    }
+//                    CFRelease(imageSampleBuffer);
+//                }];
+//            }];
+//        }];
         
 //        // bracketed capture
 //        NSArray *settings = @[
 //                              [AVCaptureManualExposureBracketedStillImageSettings manualExposureSettingsWithExposureDuration:CMTimeMake(1, 100) ISO:100.0],
 //                              [AVCaptureManualExposureBracketedStillImageSettings manualExposureSettingsWithExposureDuration:CMTimeMake(1, 200) ISO:400.0],
-////                              [AVCaptureManualExposureBracketedStillImageSettings manualExposureSettingsWithExposureDuration:CMTimeMake(1, 300) ISO:800.0],
-////                              [AVCaptureManualExposureBracketedStillImageSettings manualExposureSettingsWithExposureDuration:CMTimeMake(1, 200) ISO:800.0],
+//                              [AVCaptureManualExposureBracketedStillImageSettings manualExposureSettingsWithExposureDuration:CMTimeMake(1, 300) ISO:800.0],
+//                              [AVCaptureManualExposureBracketedStillImageSettings manualExposureSettingsWithExposureDuration:CMTimeMake(1, 200) ISO:800.0],
 //                              ];
 //        [self.stillImageOutput
 //         captureStillImageBracketAsynchronouslyFromConnection:[self.stillImageOutput connectionWithMediaType:AVMediaTypeVideo]
@@ -424,11 +462,25 @@ static float EXPOSURE_MINIMUM_DURATION = 1.0/1000; // Limit exposure duration to
 //                 NSLog(@"Capture error: %@", error);
 //             }
 //         }];
-
 	});
 }
 
-- (void)convertAndSaveTiff:(CMSampleBufferRef) imageSampleBuffer {
+- (void)saveImageFiles:(NSArray *)images {
+    dispatch_queue_t queue = dispatch_queue_create("com.photoShare.saveToCameraRoll", NULL);
+    ALAssetsLibrary *photoLibrary = [ALAssetsLibrary new];
+    [images enumerateObjectsUsingBlock:^(NSURL *fileUrl, NSUInteger idx, BOOL *stop) {
+        dispatch_async(queue, ^{
+            dispatch_semaphore_t sema = dispatch_semaphore_create(0);
+            NSData *data = [NSData dataWithContentsOfURL:fileUrl];
+            [photoLibrary writeImageDataToSavedPhotosAlbum:data metadata:nil completionBlock:^(NSURL *assetURL, NSError *error) {
+                NSLog(@"wrote to library %@? %@", assetURL, error);
+            }];
+            dispatch_semaphore_wait(sema, DISPATCH_TIME_FOREVER);
+        });
+    }];
+}
+
+- (NSURL *)convertAndSaveTiff:(CMSampleBufferRef) imageSampleBuffer {
     
 //    NSData *imageData = [AVCaptureStillImageOutput jpegStillImageNSDataRepresentation:imageSampleBuffer];
 //    UIImage *image = [[UIImage alloc] initWithData:imageData];
@@ -475,23 +527,110 @@ static float EXPOSURE_MINIMUM_DURATION = 1.0/1000; // Limit exposure duration to
     CGImageDestinationRef destination = CGImageDestinationCreateWithURL((__bridge CFURLRef)saveUrl,
                                                                         (CFStringRef)@"public.tiff", 1, NULL);
     CGImageDestinationAddImage(destination, newImage, metadata);
-    CGImageDestinationFinalize(destination);
+    BOOL success = CGImageDestinationFinalize(destination);
     CFRelease(destination);
     
     CGImageRelease(newImage);
+    NSLog(@"Saved file %@", filePath);
     
-    NSLog(@"Captured %@", filePath);
+    if (success) {
+        return saveUrl;
+    } else {
+        return nil;
+    }
+    // use writeImageDataToSavedPhotosAlbum to preserve TIFF format
+    NSData *data = [NSData dataWithContentsOfURL:saveUrl];
+    [[ALAssetsLibrary new] writeImageDataToSavedPhotosAlbum:data
+                                                   metadata:nil
+                                            completionBlock:^(NSURL *assetURL, NSError *error) {
+                                                         NSLog(@"saved %@? %@", filePath, error);
+                                                     }];
+}
+
+- (CMSampleBufferRef)CMSampleBufferCreateCopyWithDeep:(CMSampleBufferRef)sampleBuffer{
     
-//    dispatch_async(dispatch_get_global_queue( DISPATCH_QUEUE_PRIORITY_BACKGROUND, 0), ^{
+    CFRetain(sampleBuffer);
     
-        // use writeImageDataToSavedPhotosAlbum to preserve TIFF format
-        NSData *data = [NSData dataWithContentsOfURL:saveUrl];
-        [[ALAssetsLibrary new] writeImageDataToSavedPhotosAlbum:data
-                                                       metadata:nil
-                                                completionBlock:^(NSURL *assetURL, NSError *error) {
-                                                             NSLog(@"saved %@? %@", filePath, error);
-                                                         }];
-//    });
+    CMBlockBufferRef dataBuffer = CMSampleBufferGetDataBuffer(sampleBuffer);
+    //CVPixelBufferRef imageBuffer = CMSampleBufferGetImageBuffer(sampleBuffer);
+    
+    CMFormatDescriptionRef formatDescription = CMSampleBufferGetFormatDescription(sampleBuffer);
+    
+    CMItemCount timingCount;
+    CMSampleBufferGetSampleTimingInfoArray(sampleBuffer, 0, nil, &timingCount);
+    CMSampleTimingInfo* pInfo = malloc(sizeof(CMSampleTimingInfo) * timingCount);
+    CMSampleBufferGetSampleTimingInfoArray(sampleBuffer, timingCount, pInfo, &timingCount);
+    
+    CMItemCount sampleCount = CMSampleBufferGetNumSamples(sampleBuffer);
+    
+    CMItemCount sizeArrayEntries;
+    CMSampleBufferGetSampleSizeArray(sampleBuffer, 0, nil, &sizeArrayEntries);
+    size_t *sizeArrayOut = malloc(sizeof(size_t) * sizeArrayEntries);
+    CMSampleBufferGetSampleSizeArray(sampleBuffer, sizeArrayEntries, sizeArrayOut, &sizeArrayEntries);
+    
+    //CFArrayRef attachArray = CMSampleBufferGetSampleAttachmentsArray(sampleBuffer,NO);
+    
+    //buffer-level attachments
+    
+    //Exif
+    
+    CMSampleBufferRef sout = nil;
+    
+    
+    if(dataBuffer){
+        
+        CMSampleBufferCreate(kCFAllocatorDefault, dataBuffer, YES, nil,nil, formatDescription, sampleCount, timingCount, pInfo, sizeArrayEntries, sizeArrayOut, &sout);
+    }else{
+        
+        //        CMTime pts = CMSampleBufferGetPresentationTimeStamp(sampleBuffer);
+        CVImageBufferRef cvimgRef = CMSampleBufferGetImageBuffer(sampleBuffer);
+        CVPixelBufferLockBaseAddress(cvimgRef,0);
+        
+        uint8_t *buf=(uint8_t *)CVPixelBufferGetBaseAddress(cvimgRef);
+        size_t size = CVPixelBufferGetDataSize(cvimgRef);
+        void * data = nil;
+        if(buf){
+            data = malloc(size);
+            memcpy(data, buf, size);
+        }
+        
+        size_t width = CVPixelBufferGetWidth(cvimgRef);
+        size_t height = CVPixelBufferGetHeight(cvimgRef);
+        OSType pixFmt = CVPixelBufferGetPixelFormatType(cvimgRef);
+        size_t bytesPerRow = CVPixelBufferGetBytesPerRow(cvimgRef);
+        
+        
+        CVPixelBufferRef pixelBufRef = NULL;
+        CMSampleTimingInfo timimgInfo = kCMTimingInfoInvalid;
+        CMSampleBufferGetSampleTimingInfo(sampleBuffer, 0, &timimgInfo);
+        
+        OSStatus result = 0;
+        CVPixelBufferCreateWithBytes(kCFAllocatorDefault, width, height, pixFmt, data, bytesPerRow, NULL, NULL, NULL, &pixelBufRef);
+        
+        CMVideoFormatDescriptionRef videoInfo = NULL;
+        
+        result = CMVideoFormatDescriptionCreateForImageBuffer(NULL, pixelBufRef, &videoInfo);
+        
+        CMSampleBufferCreateForImageBuffer(kCFAllocatorDefault, pixelBufRef, true, NULL, NULL, videoInfo, &timimgInfo, &sout);
+        
+        CMItemCount sizeArrayEntries;
+        CMSampleBufferGetSampleSizeArray(sout, 0, nil, &sizeArrayEntries);
+        size_t *sizeArrayOut = malloc(sizeof(size_t) * sizeArrayEntries);
+        CMSampleBufferGetSampleSizeArray(sout, sizeArrayEntries, sizeArrayOut, &sizeArrayEntries);
+        
+        free(sizeArrayOut);
+        
+        if(!CMSampleBufferIsValid(sout)){
+            NSLog(@"");
+        }
+    }
+    
+    
+    free(pInfo);
+    free(sizeArrayOut);
+    CFRelease(sampleBuffer);
+    
+    return sout;
 }
 
 #pragma mark - Config Actions
